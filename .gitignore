@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Output files
+outputs/logs/*.log
+outputs/frames/*.jpg
+outputs/frames/*.png
+outputs/*.avi
+outputs/*.mp4
+
+# Keep directory structure
+!outputs/logs/.gitkeep
+!outputs/frames/.gitkeep
+
+# Model weights (optional - uncomment jika tidak ingin commit model)
+# models/*.pt
+# models/*.onnx
+
+# Temporary files
+*.tmp
+*.bak
+
+# Config files with passwords
+*_config.sh
+.env
