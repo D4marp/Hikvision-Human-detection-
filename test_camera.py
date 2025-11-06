@@ -9,9 +9,9 @@ import sys
 # ============================================
 # EDIT SESUAI CAMERA ANDA:
 # ============================================
-CAMERA_IP = "192.168.1.64"
+CAMERA_IP = "10.0.66.29"  # Updated IP
 USERNAME = "admin"
-PASSWORD = "Admin123"
+PASSWORD = "Novarion1"  # Updated password
 CHANNEL = 102  # 101=Main(1080p), 102=Sub(720p), 103=Third(480p)
 
 # Build RTSP URL

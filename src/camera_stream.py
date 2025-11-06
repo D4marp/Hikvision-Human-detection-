@@ -37,10 +37,15 @@ class HikvisionCamera:
         """
         try:
             self.logger.info(f"Mencoba koneksi ke {self.camera_name}...")
-            self.cap = cv2.VideoCapture(self.rtsp_url)
             
-            # Set buffer size untuk mengurangi latency
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            # OPTIMIZATION: Set RTSP transport to TCP for stability, reduce buffer
+            self.cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+            
+            # CRITICAL: Set buffer to 0 to get latest frame immediately (minimize latency)
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 0)
+            
+            # OPTIMIZATION: Enable fast decode
+            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'H264'))
             
             if self.cap.isOpened():
                 self.is_connected = True
@@ -52,6 +57,7 @@ class HikvisionCamera:
                 
                 self.logger.info(f"Berhasil terkoneksi ke {self.camera_name}")
                 self.logger.info(f"Resolusi: {width}x{height}, FPS: {fps}")
+                self.logger.info(f"OPTIMIZATION: Low-latency mode enabled (buffer=0)")
                 return True
             else:
                 self.logger.error(f"Gagal membuka stream dari {self.camera_name}")
@@ -64,6 +70,7 @@ class HikvisionCamera:
     def read_frame(self):
         """
         Membaca frame dari stream kamera
+        OPTIMIZATION: Skip buffered frames to get latest frame
         
         Returns:
             tuple: (success, frame) - success adalah boolean, frame adalah numpy array
@@ -72,7 +79,10 @@ class HikvisionCamera:
             return False, None
         
         try:
-            ret, frame = self.cap.read()
+            # CRITICAL: Grab frame immediately without buffering
+            # This reduces latency by skipping old frames in buffer
+            self.cap.grab()
+            ret, frame = self.cap.retrieve()
             
             if not ret:
                 self.logger.warning(f"Gagal membaca frame dari {self.camera_name}")

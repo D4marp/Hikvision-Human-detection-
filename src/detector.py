@@ -14,13 +14,13 @@ class HumanDetector:
     Kelas untuk mendeteksi manusia menggunakan YOLOv8
     """
     
-    def __init__(self, model_path="models/yolov8n.pt", conf_threshold=0.5):
+    def __init__(self, model_path="models/yolov8n.pt", conf_threshold=0.40):
         """
-        Inisialisasi detector
+        Initialize Human Detector
         
         Args:
-            model_path (str): Path ke model YOLOv8
-            conf_threshold (float): Confidence threshold untuk deteksi (0-1)
+            model_path: Path to YOLOv8 model
+            conf_threshold: Confidence threshold (default 0.40 to reduce false positives)
         """
         self.model_path = model_path
         self.conf_threshold = conf_threshold

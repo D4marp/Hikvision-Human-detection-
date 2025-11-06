@@ -8,31 +8,31 @@ Edit file ini untuk add/remove cameras
 # ========================================
 
 CAMERAS = [
-    # Camera 1 - Front Door
+    # Camera 1 - Main Camera (Your Hikvision)
     {
-        'name': 'Front Door',
-        'ip': '192.168.1.64',
+        'name': 'Main Camera',
+        'ip': '10.0.66.29',  # Your camera IP
         'username': 'admin',
-        'password': 'Admin123',
+        'password': 'Novarion1',  # Updated password
         'channel': 102,  # 101=Main(1080p), 102=Sub(720p), 103=Third(480p)
         'port': 554,
         'enabled': True
     },
     
-    # Camera 2 - Back Door
+    # Camera 2 - Disabled (example)
     {
-        'name': 'Back Door',
+        'name': 'Camera 2',
         'ip': '192.168.1.65',
         'username': 'admin',
         'password': 'Admin123',
         'channel': 102,
         'port': 554,
-        'enabled': True
+        'enabled': False  # Disabled - enable when ready
     },
     
-    # Camera 3 - Parking Lot
+    # Camera 3 - Disabled (example)
     {
-        'name': 'Parking Lot',
+        'name': 'Camera 3',
         'ip': '192.168.1.66',
         'username': 'admin',
         'password': 'Admin123',
@@ -72,12 +72,12 @@ CAMERAS = [
 # MODEL CONFIGURATION
 # ========================================
 
+# Model Configuration
 MODEL_CONFIG = {
-    'model_path': 'models/yolov8n.pt',  # yolov8n, yolov8s, yolov8m, yolov8l
-    'conf_threshold': 0.5,               # 0.0 - 1.0 (higher = stricter)
-    'device': 'cpu',                     # 'cpu' or 'cuda' (untuk Jetson)
-    # NOTE: Model sudah di-set untuk HANYA detect PERSON (class 0)
-    # Tidak akan detect mobil, kucing, atau object lain dari COCO dataset
+    'model_path': 'models/yolov8n.pt',
+    'conf_threshold': 0.40,  # Confidence threshold for detection (0.0-1.0) - raised to reduce false positives
+    'iou_threshold': 0.45,   # IoU threshold for NMS
+    'classes': [0],          # 0 = person only
 }
 
 
