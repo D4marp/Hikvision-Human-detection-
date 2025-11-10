@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hikvision Human Detection - Dashboard</title>
+    <title>Hikvision Monitoring System - Multi-Mode Dashboard</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -20,7 +21,7 @@
         }
 
         .container {
-            max-width: 1600px;
+            max-width: 1800px;
             margin: 0 auto;
         }
 
@@ -34,6 +35,8 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
         }
 
         .header h1 {
@@ -44,10 +47,11 @@
             gap: 10px;
         }
 
-        .header-status {
+        .header-controls {
             display: flex;
-            gap: 20px;
+            gap: 15px;
             align-items: center;
+            flex-wrap: wrap;
         }
 
         .status-badge {
@@ -73,12 +77,153 @@
             50% { opacity: 0.5; }
         }
 
-        /* Main Grid */
+        /* Mode Selector */
+        .mode-selector {
+            display: flex;
+            gap: 10px;
+            background: #f5f5f5;
+            padding: 8px;
+            border-radius: 8px;
+        }
+
+        .mode-btn {
+            padding: 10px 20px;
+            border: 2px solid transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+            background: white;
+            color: #666;
+        }
+
+        .mode-btn:hover {
+            background: #efefef;
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+
+        .mode-btn.security.active {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            border-color: #f5576c;
+        }
+
+        .mode-btn.office.active {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            border-color: #00f2fe;
+        }
+
+        /* Mode Indicator */
+        .mode-indicator {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            margin-left: 10px;
+        }
+
+        .mode-indicator.security {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .mode-indicator.office {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .mode-indicator.simple {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        /* Control Panel */
+        .control-panel {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .control-panel h3 {
+            margin-bottom: 15px;
+            color: #1e3c72;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        /* Grid Layout */
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
+        }
+
+        @media (max-width: 1024px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         /* Camera Card */
@@ -98,289 +243,209 @@
         .camera-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 15px 20px;
+            padding: 15px;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
-        .camera-header h2 {
-            font-size: 18px;
+        .camera-header.security {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
         }
 
-        .camera-status {
-            display: flex;
-            gap: 10px;
-            align-items: center;
+        .camera-header.office {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
         }
 
-        .status-light {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #4CAF50;
-        }
-
-        .status-light.offline {
-            background: #f44336;
-        }
-
-        /* Video Stream */
-        .video-stream {
+        .video-container {
             position: relative;
             width: 100%;
+            aspect-ratio: 16 / 9;
             background: #000;
-            aspect-ratio: 16/9;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
         }
 
-        .video-stream img {
-            max-width: 100%;
-            max-height: 100%;
+        .video-stream {
+            width: 100%;
+            height: 100%;
             object-fit: contain;
         }
 
-        .video-placeholder {
-            color: #666;
-            font-size: 14px;
-        }
-
-        /* Stats Bar */
-        .stats-bar {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
-            padding: 15px;
-            background: #f5f5f5;
-            border-top: 1px solid #e0e0e0;
-        }
-
-        .stat-item {
-            text-align: center;
-        }
-
-        .stat-label {
+        .video-stats {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #0f0;
+            padding: 8px 12px;
+            border-radius: 5px;
             font-size: 12px;
-            color: #999;
-            text-transform: uppercase;
-            margin-bottom: 5px;
+            font-family: monospace;
         }
 
-        .stat-value {
-            font-size: 20px;
-            font-weight: bold;
-            color: #667eea;
+        .camera-info {
+            padding: 15px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            font-size: 14px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: #666;
+        }
+
+        .info-value {
+            color: #1e3c72;
+            font-weight: 500;
         }
 
         /* Alerts */
         .alerts-section {
             background: white;
+            padding: 25px;
             border-radius: 12px;
-            padding: 20px;
             margin-bottom: 30px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
 
-        .alerts-section h3 {
-            margin-bottom: 15px;
-            color: #1e3c72;
-        }
-
         .alert-item {
-            padding: 12px 15px;
-            margin-bottom: 10px;
-            border-left: 4px solid #f44336;
-            background: #ffebee;
-            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            border-left: 4px solid;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
-        .alert-item.helmet-violation {
-            border-left-color: #ff9800;
-            background: #fff3e0;
+        .alert-item.info {
+            background: #d1ecf1;
+            border-left-color: #17a2b8;
+            color: #0c5460;
         }
 
-        .alert-item.crowd {
-            border-left-color: #2196F3;
-            background: #e3f2fd;
+        .alert-item.warning {
+            background: #fff3cd;
+            border-left-color: #ffc107;
+            color: #856404;
         }
 
-        .alert-item.weapon {
-            border-left-color: #f44336;
-            background: #ffebee;
+        .alert-item.danger {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
         }
 
-        .alert-time {
-            font-size: 12px;
+        .empty-state {
+            text-align: center;
+            padding: 40px;
             color: #999;
         }
 
-        /* Control Panel */
-        .control-panel {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-        }
-
-        .control-panel h3 {
-            margin-bottom: 15px;
-            color: #1e3c72;
-        }
-
-        .form-group {
-            margin-bottom: 15px;
+        /* Stats Grid */
+        .stats-grid {
             display: grid;
-            grid-template-columns: 150px 1fr;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 15px;
-            align-items: center;
+            margin-bottom: 20px;
         }
 
-        .form-group label {
-            font-weight: 500;
-            color: #333;
-        }
-
-        .form-group input,
-        .form-group select {
-            padding: 10px 12px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 14px;
-            font-family: inherit;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        /* Buttons */
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.3s;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn-primary {
-            background: #667eea;
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-        }
-
-        .btn-primary:hover {
-            background: #5568d3;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn-success {
-            background: #4CAF50;
-            color: white;
-        }
-
-        .btn-success:hover {
-            background: #45a049;
-        }
-
-        .btn-danger {
-            background: #f44336;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #da190b;
-        }
-
-        /* Responsive */
-        @media (max-width: 1024px) {
-            .grid {
-                grid-template-columns: 1fr;
-            }
-
-            .stats-bar {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-
-        /* Loading */
-        .loading {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* Info Box */
-        .info-box {
-            background: #e3f2fd;
-            border-left: 4px solid #2196F3;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 15px;
-            font-size: 14px;
-            color: #1565c0;
-        }
-
-        /* Embed Styles */
-        .embed-container {
-            background: white;
-            border-radius: 12px;
             padding: 20px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            margin-bottom: 30px;
+            border-radius: 8px;
+            text-align: center;
         }
 
-        .embed-container h3 {
-            margin-bottom: 15px;
-            color: #1e3c72;
+        .stat-card.security {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
         }
 
-        .embed-code {
-            background: #f5f5f5;
+        .stat-card.office {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        /* Worker Cards (Office Mode) */
+        .worker-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 15px;
+        }
+
+        .worker-card {
+            background: white;
             padding: 15px;
-            border-radius: 6px;
-            font-family: monospace;
-            font-size: 12px;
-            overflow-x: auto;
-            border: 1px solid #ddd;
+            border-radius: 8px;
+            border-left: 4px solid #4facfe;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
 
-        .copy-btn {
-            float: right;
-            padding: 5px 10px;
-            background: #667eea;
+        .worker-card.high {
+            border-left-color: #f44336;
+        }
+
+        .worker-card.medium {
+            border-left-color: #ff9800;
+        }
+
+        .worker-card.low {
+            border-left-color: #4caf50;
+        }
+
+        .worker-score {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .score-circle {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
             color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
+            font-size: 18px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
         }
 
-        .copy-btn:hover {
-            background: #5568d3;
+        .worker-details {
+            font-size: 13px;
+        }
+
+        .worker-detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .worker-detail-row:last-child {
+            border-bottom: none;
         }
     </style>
 </head>
@@ -388,312 +453,338 @@
     <div class="container">
         <!-- Header -->
         <div class="header">
-            <h1>
-                <span>📹</span>
-                Hikvision Detection System
-            </h1>
-            <div class="header-status">
+            <h1>📹 Hikvision Monitoring System</h1>
+            <div class="header-controls">
                 <div class="status-badge">
-                    <span class="status-dot"></span>
-                    <span id="connection-status">Connecting...</span>
+                    <div class="status-dot"></div>
+                    <span>Live Monitoring</span>
+                </div>
+                <div class="mode-selector">
+                    <button class="mode-btn simple active" onclick="switchMode('simple')">🎯 General</button>
+                    <button class="mode-btn security" onclick="switchMode('advanced')">🔒 Security</button>
+                    <button class="mode-btn office" onclick="switchMode('office')">🏢 Office</button>
                 </div>
             </div>
         </div>
 
         <!-- Control Panel -->
         <div class="control-panel">
-            <h3>➕ Add New Camera</h3>
-            <div class="info-box">
-                💡 Tambahkan kamera Hikvision untuk monitoring real-time
-            </div>
-            <form id="add-camera-form" onsubmit="addCamera(event)">
-                <div class="form-group">
-                    <label for="camera-id">Camera ID:</label>
-                    <input type="text" id="camera-id" placeholder="cam-1" required>
+            <h3>➕ Add Camera <span class="mode-indicator" id="modeIndicator">General Mode</span></h3>
+            <form id="addCameraForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Camera ID</label>
+                        <input type="text" id="cameraId" placeholder="e.g., cam-office-1" required>
+                    </div>
+                    <div class="form-group">
+                        <label>RTSP URL</label>
+                        <input type="text" id="rtspUrl" placeholder="rtsp://user:pass@ip:554/..." required>
+                    </div>
+                    <div class="form-group">
+                        <label>Detection Mode</label>
+                        <select id="detectionMode" required>
+                            <option value="simple">General (Person Only)</option>
+                            <option value="advanced">Security (Helmet, Weapon, etc)</option>
+                            <option value="office">Office (Productivity Tracking)</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="rtsp-url">RTSP URL:</label>
-                    <input type="text" id="rtsp-url" placeholder="rtsp://admin:password@10.0.66.29:554/Streaming/Channels/102" required>
-                </div>
-                <div class="form-group">
-                    <label for="detection-mode">Detection Mode:</label>
-                    <select id="detection-mode">
-                        <option value="simple">Simple (Person Only)</option>
-                        <option value="advanced">Advanced (Helmet, Weapon, etc)</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label></label>
-                    <button type="submit" class="btn btn-primary">
-                        <span>➕</span> Add Camera
-                    </button>
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">Add Camera</button>
                 </div>
             </form>
         </div>
 
-        <!-- Alerts Section -->
-        <div class="alerts-section" id="alerts-container" style="display: none;">
-            <h3>⚠️ Active Alerts</h3>
-            <div id="alerts-list"></div>
-        </div>
-
-        <!-- Cameras Grid -->
-        <div class="grid" id="cameras-grid">
-            <div style="padding: 40px; text-align: center; color: white;">
-                <p style="font-size: 18px;">👈 Add a camera to start monitoring</p>
+        <!-- Stats -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-label">Active Cameras</div>
+                <div class="stat-value" id="activeCameras">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Detections</div>
+                <div class="stat-value" id="totalDetections">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg FPS</div>
+                <div class="stat-value" id="avgFps">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active Alerts</div>
+                <div class="stat-value" id="activeAlerts">0</div>
             </div>
         </div>
 
-        <!-- Embed Section -->
-        <div class="embed-container" id="embed-section" style="display: none;">
-            <h3>📌 Embed Stream</h3>
-            <p style="margin-bottom: 15px; font-size: 14px; color: #666;">
-                Copy code di bawah untuk embed stream ke website lain:
-            </p>
-            <div class="embed-code">
-                <button class="copy-btn" onclick="copyEmbedCode()">Copy</button>
-                <pre id="embed-code-text">&lt;iframe src="http://your-server:5000?camera_id=cam-1" width="100%" height="600" frameborder="0"&gt;&lt;/iframe&gt;</pre>
+        <!-- Cameras Grid -->
+        <div class="grid" id="camerasGrid">
+            <div class="empty-state">
+                <p>📹 No cameras added yet. Add a camera above to start monitoring.</p>
+            </div>
+        </div>
+
+        <!-- Alerts -->
+        <div class="alerts-section">
+            <h3>⚠️ Active Alerts</h3>
+            <div id="alertsList" class="empty-state">
+                <p>✅ No active alerts</p>
+            </div>
+        </div>
+
+        <!-- Worker Stats (Office Mode) -->
+        <div id="officeStatsSection" style="display: none;">
+            <div class="alerts-section">
+                <h3>👥 Worker Statistics</h3>
+                <div class="worker-cards-grid" id="workerCardsGrid"></div>
             </div>
         </div>
     </div>
 
-    <!-- Socket.IO -->
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
         const socket = io();
-        const cameras = {};
+        let currentMode = 'simple';
+        let cameras = {};
+        let alerts = [];
 
-        // Connection status
-        socket.on('connect', () => {
-            document.getElementById('connection-status').textContent = 'Connected';
-            console.log('✅ Connected to server');
-        });
-
-        socket.on('disconnect', () => {
-            document.getElementById('connection-status').textContent = 'Disconnected';
-            console.log('❌ Disconnected from server');
-        });
-
-        // Add camera
-        async function addCamera(event) {
-            event.preventDefault();
-
-            const cameraId = document.getElementById('camera-id').value;
-            const rtspUrl = document.getElementById('rtsp-url').value;
-            const mode = document.getElementById('detection-mode').value;
-
-            try {
-                const response = await fetch('/api/camera/add', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        camera_id: cameraId,
-                        rtsp_url: rtspUrl,
-                        mode: mode
-                    })
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    console.log('✅ Camera added:', cameraId);
-                    addCameraCard(cameraId, rtspUrl, mode);
-                    document.getElementById('add-camera-form').reset();
-
-                    // Connect camera
-                    setTimeout(() => connectCamera(cameraId), 500);
-                } else {
-                    alert('Error: ' + data.error);
-                }
-            } catch (error) {
-                console.error('Error adding camera:', error);
-                alert('Failed to add camera');
-            }
-        }
-
-        // Connect camera
-        async function connectCamera(cameraId) {
-            try {
-                const response = await fetch(`/api/camera/connect/${cameraId}`, {
-                    method: 'POST'
-                });
-
-                if (response.ok) {
-                    console.log('✅ Camera connected:', cameraId);
-                    startMonitoring(cameraId);
-                }
-            } catch (error) {
-                console.error('Error connecting camera:', error);
-            }
-        }
-
-        // Start monitoring
-        function startMonitoring(cameraId) {
-            socket.emit('start_monitoring', { camera_id: cameraId });
-            console.log('📹 Monitoring started for:', cameraId);
-        }
-
-        // Add camera card
-        function addCameraCard(cameraId, rtspUrl, mode) {
-            const grid = document.getElementById('cameras-grid');
-
-            // Clear placeholder
-            if (grid.innerHTML.includes('Add a camera')) {
-                grid.innerHTML = '';
-            }
-
-            const card = document.createElement('div');
-            card.className = 'camera-card';
-            card.id = `camera-${cameraId}`;
-            card.innerHTML = `
-                <div class="camera-header">
-                    <h2>${cameraId}</h2>
-                    <div class="camera-status">
-                        <div class="status-light" id="status-${cameraId}"></div>
-                        <span id="mode-${cameraId}">${mode}</span>
-                    </div>
-                </div>
-                <div class="video-stream" id="stream-${cameraId}">
-                    <div class="video-placeholder">
-                        <div class="loading"></div>
-                        <p>Loading stream...</p>
-                    </div>
-                </div>
-                <div class="stats-bar">
-                    <div class="stat-item">
-                        <div class="stat-label">Humans</div>
-                        <div class="stat-value" id="count-${cameraId}">0</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">FPS</div>
-                        <div class="stat-value" id="fps-${cameraId}">0</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">Frames</div>
-                        <div class="stat-value" id="frames-${cameraId}">0</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">Time</div>
-                        <div class="stat-value" id="time-${cameraId}">--:--</div>
-                    </div>
-                </div>
-            `;
-
-            grid.appendChild(card);
-            cameras[cameraId] = { alerts: [] };
-
-            // Show embed section
-            document.getElementById('embed-section').style.display = 'block';
-        }
-
-        // Handle frame updates
-        socket.on('frame_update', (data) => {
-            const cameraId = data.camera_id;
-            const stream = document.getElementById(`stream-${cameraId}`);
-
-            if (stream) {
-                // Update frame
-                let img = stream.querySelector('img');
-                if (!img) {
-                    img = document.createElement('img');
-                    stream.innerHTML = '';
-                    stream.appendChild(img);
-                }
-                img.src = data.frame;
-
-                // Update status
-                const statusLight = document.getElementById(`status-${cameraId}`);
-                if (statusLight) {
-                    statusLight.classList.remove('offline');
-                }
-
-                // Update stats
-                if (data.human_count !== undefined) {
-                    document.getElementById(`count-${cameraId}`).textContent = data.human_count;
-                }
-
-                const time = new Date(data.timestamp).toLocaleTimeString();
-                document.getElementById(`time-${cameraId}`).textContent = time;
-
-                // Handle alerts
-                const alertsList = [];
-
-                if (data.violations) {
-                    if (data.violations.no_helmet > 0) {
-                        alertsList.push({
-                            type: 'helmet-violation',
-                            message: `⚠️ ${data.violations.no_helmet} person(s) without helmet`
-                        });
-                    }
-                }
-
-                if (data.weapon_alert) {
-                    alertsList.push({
-                        type: 'weapon',
-                        message: '🚨 WEAPON DETECTED!'
-                    });
-                }
-
-                if (data.crowd_info && data.crowd_info.crowd_detected) {
-                    alertsList.push({
-                        type: 'crowd',
-                        message: `👥 Crowd: ${data.crowd_info.person_count} persons`
-                    });
-                }
-
-                // Update alerts display
-                if (alertsList.length > 0) {
-                    updateAlerts(alertsList);
-                }
-            }
-        });
-
-        // Update alerts
-        function updateAlerts(alerts) {
-            const container = document.getElementById('alerts-container');
-            const list = document.getElementById('alerts-list');
-
-            if (alerts.length > 0) {
-                container.style.display = 'block';
-                list.innerHTML = alerts.map(alert => `
-                    <div class="alert-item ${alert.type}">
-                        <span>${alert.message}</span>
-                        <span class="alert-time">${new Date().toLocaleTimeString()}</span>
-                    </div>
-                `).join('');
+        // Switch monitoring mode
+        function switchMode(mode) {
+            currentMode = mode;
+            
+            // Update UI
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`.mode-btn.${mode === 'advanced' ? 'security' : mode}`).classList.add('active');
+            
+            // Update indicator
+            const indicator = document.getElementById('modeIndicator');
+            const modeTexts = {
+                'simple': 'General Mode - Person Detection',
+                'advanced': 'Security Mode - Safety Detection',
+                'office': 'Office Mode - Productivity Tracking'
+            };
+            indicator.textContent = modeTexts[mode];
+            indicator.className = `mode-indicator ${mode === 'advanced' ? 'security' : mode}`;
+            
+            // Update form
+            document.getElementById('detectionMode').value = mode;
+            
+            // Show/hide office stats
+            const officeSection = document.getElementById('officeStatsSection');
+            if (mode === 'office') {
+                officeSection.style.display = 'block';
             } else {
-                container.style.display = 'none';
+                officeSection.style.display = 'none';
             }
+            
+            // Update camera cards styling
+            updateCameraCardStyling();
         }
 
-        // Copy embed code
-        function copyEmbedCode() {
-            const code = document.getElementById('embed-code-text').textContent;
-            navigator.clipboard.writeText(code).then(() => {
-                alert('✅ Embed code copied to clipboard!');
+        // Update camera card styling based on mode
+        function updateCameraCardStyling() {
+            document.querySelectorAll('.camera-card').forEach(card => {
+                const camMode = card.dataset.mode;
+                const header = card.querySelector('.camera-header');
+                
+                if (camMode === 'advanced') {
+                    header.classList.add('security');
+                    header.classList.remove('office');
+                } else if (camMode === 'office') {
+                    header.classList.add('office');
+                    header.classList.remove('security');
+                } else {
+                    header.classList.remove('security', 'office');
+                }
             });
         }
 
-        // Get system status periodically
-        setInterval(async () => {
-            try {
-                const response = await fetch('/api/status');
-                const data = await response.json();
+        // Connection events
+        socket.on('connect', function() {
+            console.log('Connected to server');
+        });
 
-                // Update FPS and frames for each camera
-                for (const [camId, cam] of Object.entries(data.cameras)) {
-                    const fpsEl = document.getElementById(`fps-${camId}`);
-                    const framesEl = document.getElementById(`frames-${camId}`);
-
-                    if (fpsEl) fpsEl.textContent = cam.fps.toFixed(1);
-                    if (framesEl) framesEl.textContent = cam.frame_count;
-                }
-            } catch (error) {
-                console.error('Error getting status:', error);
+        socket.on('frame_update', function(data) {
+            const card = document.querySelector(`[data-camera-id="${data.camera_id}"]`);
+            if (card) {
+                const img = card.querySelector('.video-stream');
+                if (img) img.src = data.frame;
+                
+                const fps = card.querySelector('[data-stat="fps"]');
+                if (fps) fps.textContent = data.fps.toFixed(1);
+                
+                const frames = card.querySelector('[data-stat="frames"]');
+                if (frames) frames.textContent = data.frame_count;
             }
-        }, 1000);
+        });
+
+        socket.on('office_stats_update', function(data) {
+            if (data.stats) {
+                updateWorkerStats(data.stats);
+            }
+        });
+
+        // Form submission
+        document.getElementById('addCameraForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const cameraId = document.getElementById('cameraId').value;
+            const rtspUrl = document.getElementById('rtspUrl').value;
+            const mode = document.getElementById('detectionMode').value;
+            
+            fetch('/api/camera/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    camera_id: cameraId,
+                    rtsp_url: rtspUrl,
+                    mode: mode
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    addAlert('info', `✅ Camera ${cameraId} added successfully`);
+                    connectCamera(cameraId, mode);
+                    this.reset();
+                } else {
+                    addAlert('danger', `❌ Failed: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                addAlert('danger', `❌ Error: ${error.message}`);
+            });
+        });
+
+        function connectCamera(cameraId, mode) {
+            fetch(`/api/camera/connect/${cameraId}`, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    addCameraCard(cameraId, mode);
+                    socket.emit('start_monitoring', { camera_id: cameraId });
+                }
+            });
+        }
+
+        function addCameraCard(cameraId, mode) {
+            const grid = document.getElementById('camerasGrid');
+            
+            if (grid.querySelector('.empty-state')) {
+                grid.innerHTML = '';
+            }
+            
+            const modeLabel = {
+                'simple': '🎯 General',
+                'advanced': '🔒 Security',
+                'office': '🏢 Office'
+            };
+            
+            const card = document.createElement('div');
+            card.className = 'camera-card';
+            card.dataset.cameraId = cameraId;
+            card.dataset.mode = mode;
+            
+            card.innerHTML = `
+                <div class="camera-header ${mode === 'advanced' ? 'security' : mode}">
+                    <div>
+                        <strong>📹 ${cameraId}</strong><br>
+                        <small>${modeLabel[mode]}</small>
+                    </div>
+                </div>
+                <div class="video-container">
+                    <img class="video-stream" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" alt="Video Stream">
+                    <div class="video-stats">
+                        <div>FPS: <span data-stat="fps">0</span></div>
+                        <div>Frames: <span data-stat="frames">0</span></div>
+                    </div>
+                </div>
+                <div class="camera-info">
+                    <div class="info-row">
+                        <span class="info-label">Mode:</span>
+                        <span class="info-value">${modeLabel[mode]}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Status:</span>
+                        <span class="info-value">🟢 Active</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Resolution:</span>
+                        <span class="info-value">720p</span>
+                    </div>
+                </div>
+            `;
+            
+            grid.appendChild(card);
+        }
+
+        function addAlert(type, message) {
+            alerts.unshift({ type, message });
+            if (alerts.length > 10) alerts.pop();
+            updateAlerts();
+        }
+
+        function updateAlerts() {
+            const alertsList = document.getElementById('alertsList');
+            
+            if (alerts.length === 0) {
+                alertsList.innerHTML = '<div class="empty-state"><p>✅ No active alerts</p></div>';
+                return;
+            }
+            
+            alertsList.innerHTML = '';
+            alerts.forEach(alert => {
+                const item = document.createElement('div');
+                item.className = `alert-item ${alert.type}`;
+                item.innerHTML = `
+                    <span>${alert.message}</span>
+                    <span style="font-size: 12px; opacity: 0.7;">${new Date().toLocaleTimeString()}</span>
+                `;
+                alertsList.appendChild(item);
+            });
+            
+            document.getElementById('activeAlerts').textContent = alerts.length;
+        }
+
+        function updateWorkerStats(stats) {
+            const grid = document.getElementById('workerCardsGrid');
+            grid.innerHTML = '';
+            
+            for (const [workerId, data] of Object.entries(stats)) {
+                const score = data.effectiveness_score || 0;
+                let riskClass = 'low';
+                if (score < 50) riskClass = 'high';
+                else if (score < 70) riskClass = 'medium';
+                
+                const card = document.createElement('div');
+                card.className = `worker-card ${riskClass}`;
+                card.innerHTML = `
+                    <div class="worker-score">
+                        <div>
+                            <strong>${workerId.replace('person_', 'Worker ')}</strong><br>
+                            <small style="color: #999;">${data.effectiveness_grade}</small>
+                        </div>
+                        <div class="score-circle">${score}</div>
+                    </div>
+                    <div class="worker-details">
+                        <div class="worker-detail-row">
+                            <span>Current Sitting:</span>
+                            <span><strong>${data.current_sitting_duration}s</strong></span>
+                        </div>
+                        <div class="worker-detail-row">
+                            <span>Avg Duration:</span>
+                            <span><strong>${data.average_sit_duration_formatted}</strong></span>
+                        </div>
+                        <div class="worker-detail-row">
+                            <span>Activity:</span>
+                            <span><strong>${data.activity_breakdown?.active_percentage?.toFixed(0) || 0}% active</strong></span>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            }
+        }
+
+        // Initialize
+        console.log('Dashboard loaded');
+        switchMode('simple');
     </script>
 </body>
 </html>
