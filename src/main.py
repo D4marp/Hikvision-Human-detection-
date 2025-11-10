@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 # Import modul lokal
-from camera_stream import HikvisionCamera
+from camera_stream_threaded import ThreadedHikvisionCamera as HikvisionCamera
 from detector import HumanDetector
 
 # Setup logging
@@ -31,13 +31,13 @@ def parse_arguments():
     """
     Parse command line arguments
     """
-    parser = argparse.ArgumentParser(description='Human Detection System menggunakan YOLOv8 dan Hikvision Camera')
+    parser = argparse.ArgumentParser(description='Human Detection System menggunakan YOLOv5/YOLOv8 dan Hikvision Camera')
     
     parser.add_argument('--rtsp', type=str,
                        help='RTSP URL dari kamera Hikvision (format: rtsp://username:password@ip:port/Streaming/Channels/101)')
     
-    parser.add_argument('--model', type=str, default='models/yolov8n.pt',
-                       help='Path ke model YOLOv8 (default: models/yolov8n.pt)')
+    parser.add_argument('--model', type=str, default='models/yolov5nu.pt',
+                       help='Path ke model YOLO (default: models/yolov5nu.pt - lighter & faster)')
     
     parser.add_argument('--conf', type=float, default=0.5,
                        help='Confidence threshold untuk deteksi (0-1, default: 0.5)')
@@ -154,6 +154,10 @@ def main():
             
             # Reset reconnect counter jika berhasil baca frame
             reconnect_attempts = 0
+            
+            # OPTIMIZATION: Resize frame for faster processing (optional)
+            # Uncomment below to process at lower resolution (faster but less accurate)
+            # frame = cv2.resize(frame, (480, 270))  # Half of 640x360
             
             # Deteksi manusia
             annotated_frame, detections, human_count = detector.detect_humans(frame)

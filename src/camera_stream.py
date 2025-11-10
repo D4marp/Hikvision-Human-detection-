@@ -38,14 +38,22 @@ class HikvisionCamera:
         try:
             self.logger.info(f"Mencoba koneksi ke {self.camera_name}...")
             
-            # OPTIMIZATION: Set RTSP transport to TCP for stability, reduce buffer
-            self.cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+            # CRITICAL: Use RTSP over TCP with minimal buffering for real-time streaming
+            # Add rtsp_transport=tcp to force TCP (more stable, less packet loss)
+            rtsp_url_tcp = self.rtsp_url
+            if "?" not in self.rtsp_url:
+                rtsp_url_tcp += "?tcp"
             
-            # CRITICAL: Set buffer to 0 to get latest frame immediately (minimize latency)
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 0)
+            self.cap = cv2.VideoCapture(rtsp_url_tcp, cv2.CAP_FFMPEG)
             
-            # OPTIMIZATION: Enable fast decode
+            # CRITICAL: Set buffer to 1 (minimum) to get latest frame immediately
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            
+            # OPTIMIZATION: Enable fast decode with lower latency
             self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'H264'))
+            
+            # NEW: Force minimal frame queue
+            self.cap.set(cv2.CAP_PROP_FPS, 15)  # Match camera FPS
             
             if self.cap.isOpened():
                 self.is_connected = True
@@ -57,7 +65,7 @@ class HikvisionCamera:
                 
                 self.logger.info(f"Berhasil terkoneksi ke {self.camera_name}")
                 self.logger.info(f"Resolusi: {width}x{height}, FPS: {fps}")
-                self.logger.info(f"OPTIMIZATION: Low-latency mode enabled (buffer=0)")
+                self.logger.info(f"OPTIMIZATION: Real-time mode enabled (buffer=1, TCP transport)")
                 return True
             else:
                 self.logger.error(f"Gagal membuka stream dari {self.camera_name}")
@@ -70,7 +78,7 @@ class HikvisionCamera:
     def read_frame(self):
         """
         Membaca frame dari stream kamera
-        OPTIMIZATION: Skip buffered frames to get latest frame
+        OPTIMIZATION: Skip buffered frames to get the absolute latest frame
         
         Returns:
             tuple: (success, frame) - success adalah boolean, frame adalah numpy array
@@ -79,9 +87,12 @@ class HikvisionCamera:
             return False, None
         
         try:
-            # CRITICAL: Grab frame immediately without buffering
-            # This reduces latency by skipping old frames in buffer
-            self.cap.grab()
+            # CRITICAL: Flush buffer by grabbing multiple times (skip old frames)
+            # This ensures we always get the LATEST frame for real-time detection
+            for _ in range(2):  # Skip 2 frames to clear buffer
+                self.cap.grab()
+            
+            # Now retrieve the latest frame
             ret, frame = self.cap.retrieve()
             
             if not ret:

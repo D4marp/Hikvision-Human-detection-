@@ -1,7 +1,27 @@
 """
 Human Detector Module
-Menggunakan YOLOv8 untuk mendeteksi manusia dalam frame video
+Mendeteksi manusia menggunakan YOLOv5/YOLOv8
+OPTIMIZATION: YOLOv5n is faster and lighter than YOLOv8n
 """
+
+from ultralytics import YOLO
+import cv2
+import numpy as np
+import logging
+
+class HumanDetector:
+    """
+    Kelas untuk mendeteksi manusia menggunakan YOLOv5n (lighter & faster) atau YOLOv8n
+    """
+    
+    def __init__(self, model_path="models/yolov5nu.pt", conf_threshold=0.40):
+        """
+        Initialize Human Detector
+        
+        Args:
+            model_path: Path to YOLO model (yolov5nu.pt is recommended for speed)
+            conf_threshold: Confidence threshold (default 0.40 to reduce false positives)
+        """
 
 import cv2
 import numpy as np

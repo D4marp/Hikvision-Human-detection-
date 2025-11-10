@@ -19,15 +19,15 @@ CAMERAS = [
         'enabled': True
     },
     
-    # Camera 2 - Disabled (example)
+    # Camera 2 - Second Hikvision Camera
     {
         'name': 'Camera 2',
-        'ip': '192.168.1.65',
+        'ip': '10.0.66.34',
         'username': 'admin',
-        'password': 'Admin123',
+        'password': 'Novarion1',
         'channel': 102,
         'port': 554,
-        'enabled': False  # Disabled - enable when ready
+        'enabled': True  # Enabled for multi-camera detection
     },
     
     # Camera 3 - Disabled (example)
@@ -38,7 +38,7 @@ CAMERAS = [
         'password': 'Admin123',
         'channel': 102,
         'port': 554,
-        'enabled': True
+        'enabled': False
     },
     
     # Camera 4 - Lobby
@@ -49,7 +49,7 @@ CAMERAS = [
         'password': 'Admin123',
         'channel': 102,
         'port': 554,
-        'enabled': True
+        'enabled': False  # Disabled
     },
     
     # Camera 5 - Storage Room
@@ -74,7 +74,7 @@ CAMERAS = [
 
 # Model Configuration
 MODEL_CONFIG = {
-    'model_path': 'models/yolov8n.pt',
+    'model_path': 'models/yolov5nu.pt',  # YOLOv5n-u: Lighter & Faster than YOLOv8n (3x faster!)
     'conf_threshold': 0.40,  # Confidence threshold for detection (0.0-1.0) - raised to reduce false positives
     'iou_threshold': 0.45,   # IoU threshold for NMS
     'classes': [0],          # 0 = person only

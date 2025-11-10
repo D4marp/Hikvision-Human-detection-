@@ -1,6 +1,7 @@
 """
 Multi-Camera Human Detection System
 Menangani multiple CCTV Hikvision secara bersamaan dengan multi-threading
+REAL-TIME optimized with threaded camera streams
 """
 
 import cv2
@@ -11,7 +12,13 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from queue import Queue
+
+# Import modul lokal dengan absolute import
+import sys
+sys.path.append(str(Path(__file__).parent))
+
 from detector import HumanDetector
+from camera_stream_threaded import ThreadedHikvisionCamera
 
 # Setup logging
 logging.basicConfig(
@@ -45,7 +52,8 @@ class CameraProcessor:
         self.detector = detector
         self.display_queue = display_queue
         
-        self.cap = None
+        # Use threaded camera for real-time streaming
+        self.camera = ThreadedHikvisionCamera(self.rtsp_url, self.camera_name)
         self.is_running = False
         self.frame_count = 0
         self.detection_count = 0
@@ -58,27 +66,17 @@ class CameraProcessor:
         logger.info(f"Initialized processor for {self.camera_name}")
     
     def connect(self):
-        """Connect to camera"""
+        """Connect to camera using threaded stream"""
         try:
             logger.info(f"{self.camera_name}: Connecting to {self.rtsp_url}")
-            self.cap = cv2.VideoCapture(self.rtsp_url)
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce latency
-            
-            if self.cap.isOpened():
-                width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                logger.info(f"{self.camera_name}: Connected! Resolution: {width}x{height}")
-                return True
-            else:
-                logger.error(f"{self.camera_name}: Failed to connect")
-                return False
+            return self.camera.connect()
         except Exception as e:
             logger.error(f"{self.camera_name}: Connection error: {str(e)}")
             return False
     
     def process_frame(self):
-        """Process single frame"""
-        ret, frame = self.cap.read()
+        """Process single frame from threaded camera"""
+        ret, frame = self.camera.read_frame()
         
         if not ret:
             logger.warning(f"{self.camera_name}: Failed to read frame")
@@ -171,8 +169,7 @@ class CameraProcessor:
     
     def cleanup(self):
         """Cleanup resources"""
-        if self.cap:
-            self.cap.release()
+        self.camera.disconnect()
         
         logger.info(f"{self.camera_name}: Cleanup complete")
         logger.info(f"{self.camera_name}: Total frames: {self.frame_count}, Detections: {self.detection_count}")
