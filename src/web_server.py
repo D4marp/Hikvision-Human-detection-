@@ -1,6 +1,6 @@
 """
-Web Server untuk Hikvision Human Detection
-Flask + SocketIO untuk real-time monitoring dashboard
+Web Server untuk Hikvision Human Detection + Office Monitoring
+Flask + SocketIO untuk real-time monitoring dashboard dengan zero delay
 """
 
 import cv2
@@ -20,12 +20,13 @@ from io import BytesIO
 from src.camera_stream_threaded import ThreadedHikvisionCamera
 from src.detector import HumanDetector
 from src.advanced_detector import AdvancedDetector
+from src.office_analyzer import OfficeAnalyzer
 
 # Setup Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'hikvision-detection-secret-key-2025'
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", ping_interval=5, ping_timeout=10)
 
 # Setup logging
 logging.basicConfig(
@@ -43,6 +44,7 @@ class DetectionSystem:
     def __init__(self):
         self.cameras = {}
         self.detectors = {}
+        self.office_analyzers = {}  # NEW: Office productivity analyzers
         self.running = False
         self.stats = {
             'total_frames': 0,
@@ -51,11 +53,12 @@ class DetectionSystem:
             'active_alerts': []
         }
         self.lock = threading.Lock()
+        self.streaming_threads = {}
     
     def add_camera(self, camera_id, rtsp_url, mode='simple'):
         """
         Add camera to monitoring
-        mode: 'simple' (person only) or 'advanced' (helmet, weapon, etc)
+        mode: 'simple' (person only), 'advanced' (helmet, weapon, etc), or 'office' (productivity)
         """
         try:
             camera = ThreadedHikvisionCamera(rtsp_url, f"Camera_{camera_id}")
@@ -78,10 +81,16 @@ class DetectionSystem:
                 'fps': 0,
                 'last_frame': None,
                 'mode': mode,
-                'last_detections': []
+                'last_detections': [],
+                'start_time': datetime.now()
             }
             
             self.detectors[camera_id] = detector
+            
+            # NEW: Create office analyzer if mode is office
+            if mode == 'office':
+                self.office_analyzers[camera_id] = OfficeAnalyzer()
+            
             logger.info(f"✅ Camera {camera_id} added (mode: {mode})")
             return True
         except Exception as e:
@@ -98,315 +107,367 @@ class DetectionSystem:
                 self.cameras[camera_id]['connected'] = True
                 logger.info(f"✅ Connected to camera {camera_id}")
                 return True
-            return False
         except Exception as e:
-            logger.error(f"Error connecting to camera {camera_id}: {str(e)}")
-            return False
+            logger.error(f"Error connecting camera {camera_id}: {str(e)}")
+        
+        return False
     
-    def get_frame(self, camera_id):
-        """Get current frame from camera"""
+    def disconnect_camera(self, camera_id):
+        """Disconnect from camera"""
         if camera_id not in self.cameras:
-            return None
+            return False
         
         try:
-            ret, frame = self.cameras[camera_id]['camera'].read_frame()
-            if ret and frame is not None:
-                return frame
-            return None
+            self.cameras[camera_id]['camera'].disconnect()
+            self.cameras[camera_id]['connected'] = False
+            logger.info(f"✅ Disconnected from camera {camera_id}")
+            return True
         except Exception as e:
-            logger.error(f"Error getting frame from {camera_id}: {str(e)}")
-            return None
+            logger.error(f"Error disconnecting camera {camera_id}: {str(e)}")
+        
+        return False
+    
+    def process_frame_office(self, camera_id, frame):
+        """
+        Process frame for office monitoring with real-time analysis
+        Returns frame with overlay and office statistics
+        """
+        if camera_id not in self.cameras or camera_id not in self.detectors:
+            return frame, {}
+        
+        detector = self.detectors[camera_id]
+        analyzer = self.office_analyzers.get(camera_id)
+        
+        try:
+            # Run detection
+            detections = detector.detect(frame)
+            
+            office_stats = {}
+            detection_info = {}
+            
+            # Process each detected person
+            for idx, det in enumerate(detections):
+                person_id = f"person_{idx}"
+                
+                # Extract keypoints if available
+                keypoints = det.get('keypoints', None)
+                
+                # NEW: Office analysis
+                if analyzer:
+                    # Sitting duration
+                    sitting_info = analyzer.detect_sitting_duration(person_id, keypoints, det.get('conf', 0.5))
+                    
+                    # Activity level
+                    activity = analyzer.detect_activity_level(person_id, keypoints)
+                    
+                    # Posture
+                    posture = analyzer.detect_posture(person_id, keypoints)
+                    
+                    # Get complete stats
+                    worker_stats = analyzer.get_worker_stats(person_id)
+                    office_stats[person_id] = worker_stats
+                    detection_info[person_id] = {
+                        'box': det.get('box', []),
+                        'conf': det.get('conf', 0),
+                        'class': det.get('class', 'person'),
+                        'sitting_info': sitting_info,
+                        'activity': activity,
+                        'posture': posture,
+                        'effectiveness_score': worker_stats['effectiveness_score'],
+                        'effectiveness_grade': worker_stats['effectiveness_grade']
+                    }
+                    
+                    # Draw detection box with color based on score
+                    if sitting_info['risk'] == 'high':
+                        color = (0, 0, 255)  # Red - high risk
+                    elif sitting_info['risk'] == 'medium':
+                        color = (0, 165, 255)  # Orange - medium risk
+                    else:
+                        color = (0, 255, 0)  # Green - normal
+                    
+                    box = det.get('box', [])
+                    if len(box) >= 4:
+                        cv2.rectangle(frame, (int(box[0]), int(box[1])), 
+                                     (int(box[2]), int(box[3])), color, 2)
+                        
+                        # Add info text
+                        label = f"#{idx} {sitting_info['status'].upper()}"
+                        if sitting_info['status'] == 'sitting':
+                            label += f" {sitting_info['duration_formatted']}"
+                        
+                        cv2.putText(frame, label, (int(box[0]), int(box[1]) - 5),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            
+            # Add overlay
+            if analyzer:
+                frame = analyzer.add_office_overlay(frame, detection_info, fps=self.cameras[camera_id]['fps'])
+            
+            return frame, office_stats
+        
+        except Exception as e:
+            logger.error(f"Error processing frame for office: {str(e)}")
+            return frame, {}
     
     def process_frame(self, camera_id, frame):
         """Process frame with detection"""
-        if camera_id not in self.detectors:
-            return None
+        if camera_id not in self.cameras or camera_id not in self.detectors:
+            return frame, {}
+        
+        detector = self.detectors[camera_id]
+        mode = self.cameras[camera_id]['mode']
         
         try:
-            detector = self.detectors[camera_id]
-            mode = self.cameras[camera_id]['mode']
-            
-            if mode == 'advanced':
-                detections, annotated = detector.detect_objects(frame)
-                # Add more processing for advanced mode
-                violations = detector.detect_helmet_violation(detections)
-                crowd = detector.detect_intrusion_crowd(detections)
-                has_weapon = detector.detect_weapon_intrusion(detections)
-                
-                result = {
-                    'detections': detections,
-                    'frame': annotated,
-                    'violations': violations,
-                    'crowd': crowd,
-                    'weapon': has_weapon
-                }
+            if mode == 'office':
+                return self.process_frame_office(camera_id, frame)
             else:
-                annotated, detections, human_count = detector.detect_humans(frame)
-                result = {
-                    'detections': detections,
-                    'frame': annotated,
-                    'human_count': human_count,
-                    'count': human_count
-                }
-            
-            return result
-        except Exception as e:
-            logger.error(f"Error processing frame from {camera_id}: {str(e)}")
-            return None
-    
-    def frame_to_base64(self, frame):
-        """Convert frame to base64 for sending over web"""
-        if frame is None:
-            return None
+                # Standard detection
+                detections = detector.detect(frame)
+                detection_dict = {}
+                
+                for idx, det in enumerate(detections):
+                    box = det.get('box', [])
+                    if len(box) >= 4:
+                        cv2.rectangle(frame, (int(box[0]), int(box[1])), 
+                                     (int(box[2]), int(box[3])), (0, 255, 0), 2)
+                        
+                        label = f"{det.get('class', 'object')} {det.get('conf', 0):.2f}"
+                        cv2.putText(frame, label, (int(box[0]), int(box[1]) - 5),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                        
+                        detection_dict[f"det_{idx}"] = det
+                
+                return frame, detection_dict
         
-        try:
-            # Resize frame untuk bandwidth efficiency
-            frame = cv2.resize(frame, (640, 360))
-            
-            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            img_str = base64.b64encode(buffer).decode('utf-8')
-            return f"data:image/jpeg;base64,{img_str}"
         except Exception as e:
-            logger.error(f"Error converting frame to base64: {str(e)}")
-            return None
+            logger.error(f"Error processing frame: {str(e)}")
+            return frame, {}
 
 # Initialize detection system
 detection_system = DetectionSystem()
 
-
-# ============================================
-# WEB ROUTES
-# ============================================
-
-@app.route('/')
-def index():
-    """Main dashboard"""
-    return render_template('dashboard.html')
-
-
-@app.route('/api/status')
-def get_status():
+# REST API Endpoints
+@app.route('/api/status', methods=['GET'])
+def api_status():
     """Get system status"""
     try:
-        with detection_system.lock:
-            return jsonify({
-                'running': detection_system.running,
-                'cameras': {
-                    cam_id: {
-                        'connected': cam['connected'],
-                        'frame_count': cam['frame_count'],
-                        'detection_count': cam['detection_count'],
-                        'fps': cam['fps'],
-                        'mode': cam['mode']
-                    }
-                    for cam_id, cam in detection_system.cameras.items()
-                },
-                'stats': detection_system.stats
+        cameras_info = []
+        for camera_id, cam_info in detection_system.cameras.items():
+            cameras_info.append({
+                'id': camera_id,
+                'connected': cam_info['connected'],
+                'fps': cam_info['fps'],
+                'frames': cam_info['frame_count'],
+                'detections': cam_info['detection_count'],
+                'mode': cam_info['mode']
             })
+        
+        return jsonify({
+            'status': 'running' if detection_system.running else 'stopped',
+            'cameras': cameras_info,
+            'stats': detection_system.stats
+        })
     except Exception as e:
-        logger.error(f"Error getting status: {str(e)}")
+        logger.error(f"Error in /api/status: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-
 @app.route('/api/camera/add', methods=['POST'])
-def add_camera():
+def api_camera_add():
     """Add new camera"""
     try:
         data = request.json
-        camera_id = data.get('camera_id')
+        camera_id = data.get('camera_id', f"cam_{int(time.time())}")
         rtsp_url = data.get('rtsp_url')
         mode = data.get('mode', 'simple')
         
-        if not camera_id or not rtsp_url:
-            return jsonify({'error': 'Missing camera_id or rtsp_url'}), 400
+        if not rtsp_url:
+            return jsonify({'error': 'rtsp_url required'}), 400
         
         if detection_system.add_camera(camera_id, rtsp_url, mode):
-            return jsonify({'status': 'success', 'message': f'Camera {camera_id} added'})
+            return jsonify({'status': 'success', 'camera_id': camera_id})
         else:
             return jsonify({'error': 'Failed to add camera'}), 500
-    
     except Exception as e:
-        logger.error(f"Error adding camera: {str(e)}")
+        logger.error(f"Error in /api/camera/add: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-
 @app.route('/api/camera/connect/<camera_id>', methods=['POST'])
-def connect_camera(camera_id):
+def api_camera_connect(camera_id):
     """Connect to camera"""
     try:
         if detection_system.connect_camera(camera_id):
-            return jsonify({'status': 'success', 'message': f'Connected to {camera_id}'})
+            return jsonify({'status': 'success'})
         else:
             return jsonify({'error': 'Failed to connect'}), 500
     except Exception as e:
+        logger.error(f"Error in /api/camera/connect: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/camera/disconnect/<camera_id>', methods=['POST'])
-def disconnect_camera(camera_id):
+def api_camera_disconnect(camera_id):
     """Disconnect from camera"""
     try:
-        if camera_id in detection_system.cameras:
-            detection_system.cameras[camera_id]['camera'].disconnect()
-            detection_system.cameras[camera_id]['connected'] = False
+        if detection_system.disconnect_camera(camera_id):
             return jsonify({'status': 'success'})
-        return jsonify({'error': 'Camera not found'}), 404
+        else:
+            return jsonify({'error': 'Failed to disconnect'}), 500
     except Exception as e:
+        logger.error(f"Error in /api/camera/disconnect: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/office/workers/<camera_id>', methods=['GET'])
+def api_office_workers(camera_id):
+    """Get office worker statistics"""
+    try:
+        if camera_id not in detection_system.office_analyzers:
+            return jsonify({'error': 'Camera not in office mode'}), 400
+        
+        analyzer = detection_system.office_analyzers[camera_id]
+        workers_data = {}
+        
+        for person_id in analyzer.workers.keys():
+            workers_data[person_id] = analyzer.get_worker_stats(person_id)
+        
+        return jsonify({'workers': workers_data})
+    except Exception as e:
+        logger.error(f"Error in /api/office/workers: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
-# ============================================
-# WEBSOCKET EVENTS
-# ============================================
-
+# WebSocket Events - REAL-TIME WITH ZERO DELAY
 @socketio.on('connect')
 def handle_connect():
     """Handle client connection"""
-    logger.info(f"Client connected: {request.sid}")
-    emit('connection_response', {'data': 'Connected to detection server'})
-
+    logger.info(f"🔗 Client connected: {request.sid}")
+    emit('connect_response', {'status': 'connected', 'sid': request.sid})
 
 @socketio.on('disconnect')
 def handle_disconnect():
     """Handle client disconnection"""
-    logger.info(f"Client disconnected: {request.sid}")
-
+    logger.info(f"🔌 Client disconnected: {request.sid}")
 
 @socketio.on('start_monitoring')
 def handle_start_monitoring(data):
-    """Start monitoring specific camera"""
-    try:
-        camera_id = data.get('camera_id')
-        if not camera_id:
-            emit('error', {'message': 'Missing camera_id'})
-            return
-        
-        logger.info(f"Starting monitoring for {camera_id}")
-        emit('monitoring_started', {'camera_id': camera_id})
-        
-        # Start streaming thread
-        threading.Thread(
-            target=stream_camera,
-            args=(camera_id, request.sid),
-            daemon=True
-        ).start()
+    """Start streaming camera with ZERO DELAY"""
+    camera_id = data.get('camera_id')
+    session_id = request.sid
     
-    except Exception as e:
-        logger.error(f"Error starting monitoring: {str(e)}")
-        emit('error', {'message': str(e)})
-
+    if camera_id not in detection_system.cameras:
+        emit('error', {'message': 'Camera not found'})
+        return
+    
+    logger.info(f"▶️  Starting monitoring for {camera_id} (client: {session_id})")
+    
+    # Start streaming in background
+    thread = threading.Thread(
+        target=stream_camera_realtime,
+        args=(camera_id, session_id),
+        daemon=True
+    )
+    thread.start()
+    detection_system.streaming_threads[f"{camera_id}_{session_id}"] = thread
+    
+    emit('monitoring_started', {'camera_id': camera_id})
 
 @socketio.on('stop_monitoring')
 def handle_stop_monitoring(data):
-    """Stop monitoring"""
+    """Stop streaming camera"""
     camera_id = data.get('camera_id')
-    logger.info(f"Stopped monitoring for {camera_id}")
+    logger.info(f"⏸️  Stopping monitoring for {camera_id}")
     emit('monitoring_stopped', {'camera_id': camera_id})
 
-
-# ============================================
-# STREAMING FUNCTIONS
-# ============================================
-
-def stream_camera(camera_id, session_id):
-    """Stream camera frames to client"""
+def stream_camera_realtime(camera_id, session_id):
+    """
+    Stream camera frames with REAL-TIME zero delay
+    Using aggressive frame skipping and optimized encoding
+    """
+    camera_info = detection_system.cameras[camera_id]
+    camera = camera_info['camera']
+    
+    if not camera.is_connected() and not camera.connect():
+        socketio.emit('error', {'message': 'Failed to connect to camera'}, room=session_id)
+        return
+    
+    frame_skip = 0
+    skip_interval = 2  # Send every 2nd frame for other clients, all frames for office
+    fps_counter = 0
+    fps_start = time.time()
+    
     try:
-        # Ensure camera is connected
-        if not detection_system.cameras[camera_id]['connected']:
-            detection_system.connect_camera(camera_id)
-        
-        frame_count = 0
-        start_time = time.time()
-        
         while True:
             try:
-                # Get frame
-                frame = detection_system.get_frame(camera_id)
+                # Get frame with minimal latency
+                frame = camera.get_frame()
                 if frame is None:
-                    time.sleep(0.1)
+                    time.sleep(0.001)  # Minimal sleep
                     continue
                 
-                # Process frame
-                result = detection_system.process_frame(camera_id, frame)
-                if result is None:
-                    continue
+                camera_info['frame_count'] += 1
+                frame_skip += 1
                 
-                # Convert to base64
-                frame_b64 = detection_system.frame_to_base64(result['frame'])
-                if frame_b64 is None:
-                    continue
+                # Process detections
+                processed_frame, detections = detection_system.process_frame(camera_id, frame)
                 
-                # Update stats
-                with detection_system.lock:
-                    detection_system.cameras[camera_id]['last_frame'] = frame_b64
-                    detection_system.cameras[camera_id]['frame_count'] += 1
-                    frame_count += 1
+                # Update FPS
+                fps_counter += 1
+                elapsed = time.time() - fps_start
+                if elapsed >= 1.0:
+                    camera_info['fps'] = fps_counter / elapsed
+                    fps_counter = 0
+                    fps_start = time.time()
+                
+                # Send frame every interval (aggressive for real-time)
+                if frame_skip >= skip_interval:
+                    frame_skip = 0
                     
-                    # Calculate FPS
-                    elapsed = time.time() - start_time
-                    if elapsed > 0:
-                        fps = frame_count / elapsed
-                        detection_system.cameras[camera_id]['fps'] = fps
+                    # Encode frame efficiently
+                    _, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    frame_b64 = base64.b64encode(buffer).decode('utf-8')
+                    
+                    # Emit with minimal metadata
+                    socketio.emit('frame_update', {
+                        'camera_id': camera_id,
+                        'frame': f'data:image/jpeg;base64,{frame_b64}',
+                        'timestamp': datetime.now().isoformat(),
+                        'fps': camera_info['fps'],
+                        'frame_count': camera_info['frame_count'],
+                        'detections': detections,
+                        'mode': camera_info['mode']
+                    }, room=session_id, skip_sid=False)
                 
-                # Prepare data for emission
-                data = {
-                    'camera_id': camera_id,
-                    'frame': frame_b64,
-                    'timestamp': datetime.now().isoformat()
-                }
+                # For office mode, also send detailed stats every frame
+                if camera_info['mode'] == 'office' and detections:
+                    socketio.emit('office_stats_update', {
+                        'camera_id': camera_id,
+                        'stats': detections,
+                        'timestamp': datetime.now().isoformat()
+                    }, room=session_id, skip_sid=False)
                 
-                # Add detection info
-                if 'count' in result:
-                    data['human_count'] = result['count']
-                    detection_system.cameras[camera_id]['detection_count'] = result['count']
-                
-                if 'crowd' in result:
-                    data['crowd_info'] = result['crowd']
-                
-                if 'weapon' in result:
-                    data['weapon_alert'] = result['weapon']
-                
-                if 'violations' in result:
-                    data['violations'] = {
-                        'no_helmet': result['violations']['no_helmet'],
-                        'no_jacket': result['violations']['no_safety_jacket']
-                    }
-                
-                # Emit frame
-                socketio.emit('frame_update', data, room=session_id)
-                
-                # Rate limiting
-                time.sleep(0.03)  # ~30 FPS
-            
             except Exception as e:
-                logger.error(f"Error in streaming loop: {str(e)}")
-                time.sleep(0.5)
+                logger.error(f"Error in frame loop: {str(e)}")
+                time.sleep(0.1)
     
     except Exception as e:
-        logger.error(f"Error in stream_camera: {str(e)}")
+        logger.error(f"Stream error for {camera_id}: {str(e)}")
+        socketio.emit('stream_error', {'error': str(e)}, room=session_id)
+    
+    finally:
+        logger.info(f"📹 Stream ended for {camera_id}")
 
+# Main page
+@app.route('/')
+def index():
+    """Serve main dashboard"""
+    return render_template('dashboard.html')
 
-# ============================================
-# ERROR HANDLERS
-# ============================================
+@app.route('/office')
+def office_dashboard():
+    """Serve office monitoring dashboard"""
+    return render_template('office_dashboard.html')
 
-@app.errorhandler(404)
-def not_found(e):
-    return jsonify({'error': 'Not found'}), 404
-
-
-@app.errorhandler(500)
-def internal_error(e):
-    return jsonify({'error': 'Internal server error'}), 500
-
+def run_server(host='0.0.0.0', port=5000, debug=False):
+    """Run Flask server"""
+    detection_system.running = True
+    logger.info(f"🚀 Starting server on {host}:{port}")
+    socketio.run(app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)
 
 if __name__ == '__main__':
-    logger.info("="*60)
-    logger.info("HIKVISION DETECTION WEB SERVER")
-    logger.info("="*60)
-    logger.info("Starting Flask + SocketIO server...")
-    logger.info("Open browser at: http://localhost:5000")
-    logger.info("="*60)
-    
-    # Run server
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    run_server()
